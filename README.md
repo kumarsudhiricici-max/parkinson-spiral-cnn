@@ -70,8 +70,9 @@ SVM, Random Forest and XGBoost models. Images are converted to 128 x 128
 grayscale and normalized to [0, 1]. The CNN uses convolution, batch
 normalization, max pooling, dropout and a sigmoid output for binary
 classification. Validation and test partitions are separated by subject.
-The saved model is `models/cnn.keras` and can be selected in the Streamlit
-Analyze Spiral tab after training.
+The saved model is `models/cnn.keras`. In the Streamlit Analyze Spiral tab,
+uploading a drawing runs every available trained model and displays their
+Parkinson-class scores and decisions together in a table.
 
 The CNN's class decision cutoff is selected using a participant-separated
 validation set to maximize balanced accuracy; held-out test data is not used

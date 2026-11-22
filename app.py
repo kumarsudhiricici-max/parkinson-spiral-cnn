@@ -45,61 +45,82 @@ with tabs[0]:
                 shutil.rmtree(tmp,ignore_errors=True)
 
 with tabs[1]:
-    available=[]
-    for fn in ["svm.joblib","random_forest.joblib","xgboost.joblib","cnn.keras"]:
-        if os.path.exists(os.path.join(MODEL_DIR,fn)): available.append(fn)
+    model_files=[
+        ("SVM","svm.joblib"),
+        ("Random Forest","random_forest.joblib"),
+        ("XGBoost","xgboost.joblib"),
+        ("CNN","cnn.keras")
+    ]
+    available=[
+        (name,fn) for name,fn in model_files
+        if os.path.exists(os.path.join(MODEL_DIR,fn))
+    ]
     if not available:
         st.warning("Train a model first.")
     else:
-        model_file=st.selectbox("Model",available)
         up=st.file_uploader("Upload a spiral drawing",type=["png","jpg","jpeg","bmp","webp"],key="spiral")
         if up:
             arr=np.frombuffer(up.getvalue(),np.uint8)
             img=cv2.imdecode(arr,cv2.IMREAD_COLOR)
             try:
                 feat,mask=extract_features(img)
-                if model_file=="cnn.keras":
-                    import tensorflow as tf
-                    model=tf.keras.models.load_model(os.path.join(MODEL_DIR,model_file))
-                    gray=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY) if len(img.shape)==3 else img
-                    gray=cv2.resize(gray,(128,128),interpolation=cv2.INTER_AREA)
-                    cnn_input=(gray.astype("float32")/255.0)[np.newaxis,...,np.newaxis]
-                    score=float(model.predict(cnn_input,verbose=0).reshape(-1)[0])
-                    metadata_path=os.path.join(MODEL_DIR,"metadata.json")
-                    if os.path.exists(metadata_path):
-                        with open(metadata_path,"r") as f:
-                            metadata=json.load(f)
-                        threshold=float(metadata.get("cnn_threshold",0.5))
-                    else:
-                        threshold=0.5
-                else:
-                    model=joblib.load(os.path.join(MODEL_DIR,model_file))
-                    score=float(model.predict_proba(feat.reshape(1,-1))[0,1])
-                    threshold=0.5
                 st.image(cv2.cvtColor(img,cv2.COLOR_BGR2RGB),caption="Input drawing",width=420)
 
-                # Do NOT present this score as a medical probability.
-                pred=int(score>=threshold)
-                if abs(score-threshold)<=.10:
-                    st.warning("🟠 **Indeterminate model output**")
-                    st.write("The model score is close to its decision boundary. This drawing should not be interpreted as a clear classification.")
-                    status="Indeterminate"
-                elif pred==0:
-                    st.success("🟢 **Pattern is more consistent with the Control class**")
-                    status="Control-side"
-                else:
-                    st.warning("🟠 **Pattern is more consistent with the Parkinson class**")
-                    status="Parkinson-side"
+                rows=[]
+                for model_name,model_file in available:
+                    try:
+                        if model_file=="cnn.keras":
+                            import tensorflow as tf
+                            model=tf.keras.models.load_model(
+                                os.path.join(MODEL_DIR,model_file)
+                            )
+                            gray=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+                            gray=cv2.resize(gray,(128,128),interpolation=cv2.INTER_AREA)
+                            cnn_input=(gray.astype("float32")/255.0)[np.newaxis,...,np.newaxis]
+                            score=float(model.predict(cnn_input,verbose=0).reshape(-1)[0])
+                            metadata_path=os.path.join(MODEL_DIR,"metadata.json")
+                            if os.path.exists(metadata_path):
+                                with open(metadata_path,"r") as f:
+                                    metadata=json.load(f)
+                                threshold=float(metadata.get("cnn_threshold",0.5))
+                            else:
+                                threshold=0.5
+                        else:
+                            model=joblib.load(os.path.join(MODEL_DIR,model_file))
+                            score=float(model.predict_proba(feat.reshape(1,-1))[0,1])
+                            threshold=0.5
 
-                st.metric("Model score for Parkinson class",f"{score*100:.1f}%")
-                st.progress(score)
-                if model_file=="cnn.keras":
-                    st.caption(f"CNN decision cutoff: {threshold:.3f} (selected using validation data)")
+                        if abs(score-threshold)<=.10:
+                            status="Indeterminate"
+                        elif score>=threshold:
+                            status="Parkinson-side"
+                        else:
+                            status="Control-side"
+                        rows.append({
+                            "Model":model_name,
+                            "Prediction":status,
+                            "Parkinson-class score":f"{score*100:.1f}%",
+                            "_score":score
+                        })
+                    except Exception as e:
+                        st.error(f"{model_name} prediction failed: {e}")
+
+                if rows:
+                    st.subheader("Current image predictions")
+                    result_df=pd.DataFrame(rows).sort_values(
+                        "_score",ascending=False
+                    )
+                    st.dataframe(
+                        result_df.drop(columns="_score"),
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
                 st.info("This is an ML score, not a clinical probability. It does not diagnose Parkinson's disease. Clinical assessment is required for diagnosis.")
                 with st.expander("Technical features"):
                     st.dataframe(pd.DataFrame({"Feature":FEATURE_NAMES,"Value":feat}),use_container_width=True)
-            except Exception as e: st.error(str(e))
+            except Exception as e:
+                st.error(str(e))
 
 with tabs[2]:
     p=os.path.join(MODEL_DIR,"test_metrics.csv")

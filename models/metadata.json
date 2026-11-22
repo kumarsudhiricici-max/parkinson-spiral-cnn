@@ -4,7 +4,7 @@
   "train_subjects": 73,
   "test_images": 76,
   "train_images": 292,
-  "cnn_threshold": 0.48685404658317566,
+  "cnn_threshold": 0.48967158794403076,
   "roc_auc_95ci": [
     0.7178438474897887,
     0.9272197045227951
